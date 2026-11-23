@@ -46,13 +46,13 @@ public void configureMessageBroker(MessageBrokerRegistry config) {
 }
 
     @Override
-    public void registerStompEndpoints(StompEndpointRegistry registry) {
-        registry.addEndpoint("/ws")
-                .setAllowedOrigins(ALLOWED_ORIGINS)
-                .withSockJS()
-                .setClientLibraryUrl("https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js");
+public void registerStompEndpoints(StompEndpointRegistry registry) {
+    registry.addEndpoint("/ws")
+            .setAllowedOriginPatterns(ALLOWED_ORIGINS)
+            .withSockJS()
+            .setClientLibraryUrl("https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js");
 
-        registry.addEndpoint("/ws")
-                .setAllowedOrigins(ALLOWED_ORIGINS);
+    registry.addEndpoint("/ws")
+            .setAllowedOriginPatterns(ALLOWED_ORIGINS);
     }
 }
