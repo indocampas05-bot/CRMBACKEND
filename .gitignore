@@ -1,0 +1,18 @@
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Local configuration
+application-local.properties
+
+# Build files
+target/
+build/
+
+# IDE
+.idea/
+.vscode/
+
+# Logs
+*.log
