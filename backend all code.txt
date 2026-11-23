@@ -3602,6 +3602,20 @@ public ResponseEntity<Map<String, Object>> deleteMultipleLeads(
         );
     }
 
+    // ============================================================
+    // SUPER ADMIN - FOLLOW-UPS OF ONE TELECALLER
+    // ============================================================
+
+    @GetMapping("/followups/telecaller/{username}")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
+    public ResponseEntity<List<LeadResponse>> getTelecallerFollowUps(
+            @PathVariable String username) {
+
+        return ResponseEntity.ok(
+                leadService.getFollowUpsForTelecaller(username)
+        );
+    }
+
     @GetMapping("/{leadId}/history")
 public ResponseEntity<List<LeadActivity>> getLeadHistory(
         @PathVariable String leadId) {
@@ -18608,43 +18622,85 @@ public class LeadService {
         }
     }
 
-    public void deleteLead(String leadId) {
-        Lead lead = leadRepository.findByLeadId(leadId)
-                .orElseThrow(() -> new RuntimeException("Lead not found with ID: " + leadId));
+    // Accepts BOTH the Mongo _id (what the frontend sends) and the business leadId.
+    private Lead resolveLead(String idOrLeadId) {
+        if (idOrLeadId == null || idOrLeadId.trim().isEmpty()) return null;
+        String key = idOrLeadId.trim();
+        return leadRepository.findById(key)
+                .or(() -> leadRepository.findByLeadId(key))
+                .orElse(null);
+    }
+
+    public void deleteLead(String idOrLeadId) {
+        Lead lead = resolveLead(idOrLeadId);
+        if (lead == null) {
+            throw new RuntimeException("Lead not found with ID: " + idOrLeadId);
+        }
         leadRepository.delete(lead);
     }
 
-    public int deleteMultipleLeads(List<String> leadIds) {
+    public int deleteMultipleLeads(List<String> ids) {
+        if (ids == null || ids.isEmpty()) return 0;
 
-    if (leadIds == null || leadIds.isEmpty()) {
-        return 0;
-    }
-
-    int deletedCount = 0;
-
-    for (String leadId : leadIds) {
-
-        if (leadId == null || leadId.trim().isEmpty()) {
-            continue;
+        List<Lead> toDelete = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (String id : ids) {
+            Lead lead = resolveLead(id);
+            if (lead != null && seen.add(lead.getId())) {
+                toDelete.add(lead);
+            }
         }
-
-        Lead lead = leadRepository.findByLeadId(leadId.trim())
-                .orElse(null);
-
-        if (lead != null) {
-            leadRepository.delete(lead);
-            deletedCount++;
+        if (!toDelete.isEmpty()) {
+            leadRepository.deleteAll(toDelete);
         }
+        return toDelete.size();
     }
-
-    return deletedCount;
-}   
 
     public void deleteAllLeads() {
         leadRepository.deleteAll();
     }
-}
 
+    // ===================== SUPER ADMIN: FOLLOW-UPS OF ONE TELECALLER =====================
+    // A follow-up is a Lead with tcNextRefollowupDate set (same rule the Telecaller
+    // Follow-ups page uses). Leads belong to a telecaller when they sit in one of the
+    // telecaller's districts or are assigned to the telecaller's username.
+    public List<LeadResponse> getFollowUpsForTelecaller(String username) {
+        if (username == null || username.trim().isEmpty()) {
+            throw new RuntimeException("Telecaller username is required");
+        }
+        String uname = username.trim();
+        Telecaller tc = telecallerRepository.findByUsername(uname)
+                .orElseThrow(() -> new RuntimeException("Telecaller not found: " + uname));
+
+        List<Criteria> ownerRules = new ArrayList<>();
+        ownerRules.add(Criteria.where("assignedTo").is(uname));
+
+        List<Pattern> districtPatterns = new ArrayList<>();
+        if (tc.getDistricts() != null) {
+            for (String d : tc.getDistricts()) {
+                if (d != null && !d.trim().isEmpty()) {
+                    districtPatterns.add(Pattern.compile(
+                            "^" + Pattern.quote(d.trim()) + "$", Pattern.CASE_INSENSITIVE));
+                }
+            }
+        }
+        if (!districtPatterns.isEmpty()) {
+            ownerRules.add(Criteria.where("district").in(districtPatterns));
+        }
+
+        Query query = new Query(new Criteria().andOperator(
+                Criteria.where("tcNextRefollowupDate").nin(java.util.Arrays.asList("", null)),
+                new Criteria().orOperator(ownerRules.toArray(new Criteria[0]))
+        ));
+        query.with(org.springframework.data.domain.Sort.by(
+                org.springframework.data.domain.Sort.Direction.ASC, "tcNextRefollowupDate"));
+        query.fields().exclude("activityHistory").exclude("callHistory");
+
+        return mongoTemplate.find(query, Lead.class).stream()
+                .map(this::convertToResponse)
+                .collect(Collectors.toList());
+    }
+}
 
 ===== D:\CRM Main\indocrm (1)\indocrm (1)\indocrm\src\main\java\com\indocrm\indocrm\service\LeavePermissionService.java =====
 package com.indocrm.indocrm.service;
