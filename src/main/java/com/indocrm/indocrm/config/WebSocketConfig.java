@@ -26,7 +26,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         "http://192.168.0.101:5173",
         "http://192.168.0.101:5174",
         "http://192.168.0.101:5175",
-        "https://thespian-impulse-glorious.ngrok-free.dev"
+        "https://thespian-impulse-glorious.ngrok-free.dev",
+        "https://*-indocampas.vercel.app"
 
     };
 

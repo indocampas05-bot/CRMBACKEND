@@ -259,7 +259,7 @@ public CorsConfigurationSource corsConfigurationSource() {
             "http://192.168.0.*:*",
             "http://192.168.1.*:*",
             "http://192.168.*.*:*",
-
+            "https://*-indocampas.vercel.app",
             "https://thespian-impulse-glorious.ngrok-free.dev",
             "https://*.ngrok-free.dev",
             "https://*.trycloudflare.com",
