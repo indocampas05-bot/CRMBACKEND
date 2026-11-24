@@ -263,6 +263,8 @@ public CorsConfigurationSource corsConfigurationSource() {
             "https://thespian-impulse-glorious.ngrok-free.dev",
             "https://*.ngrok-free.dev",
             "https://*.trycloudflare.com",
+            "https://crmtelecaller-theta.vercel.app",
+            "https://crmsuperadmin-alpha.vercel.app",
             "https://*.cfargotunnel.com"
         )
     );
