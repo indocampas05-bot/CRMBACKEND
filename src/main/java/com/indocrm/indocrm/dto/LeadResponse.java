@@ -63,6 +63,11 @@ public class LeadResponse {
     private String remarks;
 
     private List<String> updates;
+
+    // ===== CALL TRACKING (filled by TelecallerLeadController from the `calls` collection) =====
+    private int callCount;
+    private Date lastCalledAt;
+    private String lastCalledBy;
     private java.util.Map<String, Object> excelData;
     private java.util.List<com.indocrm.indocrm.model.LeadActivity> activityHistory;
 
@@ -236,4 +241,10 @@ public class LeadResponse {
     public java.util.List<com.indocrm.indocrm.model.LeadActivity> getActivityHistory() { return activityHistory; }
     public void setActivityHistory(java.util.List<com.indocrm.indocrm.model.LeadActivity> activityHistory) { this.activityHistory = activityHistory; }
 
+    public int getCallCount() { return callCount; }
+    public void setCallCount(int callCount) { this.callCount = callCount; }
+    public Date getLastCalledAt() { return lastCalledAt; }
+    public void setLastCalledAt(Date lastCalledAt) { this.lastCalledAt = lastCalledAt; }
+    public String getLastCalledBy() { return lastCalledBy; }
+    public void setLastCalledBy(String lastCalledBy) { this.lastCalledBy = lastCalledBy; }
 }

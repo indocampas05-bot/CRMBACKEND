@@ -1,9 +1,13 @@
 package com.indocrm.indocrm.controller;
 
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.LinkedHashSet;
+import java.util.stream.Collectors;
 import java.util.regex.Pattern;
 
 import org.springframework.data.domain.Page;
@@ -11,6 +15,9 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.aggregation.AggregationResults;
+import org.bson.Document;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.web.PageableDefault;
@@ -23,6 +30,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.indocrm.indocrm.dto.LeadResponse;
+import com.indocrm.indocrm.model.Call;
 import com.indocrm.indocrm.model.Lead;
 import com.indocrm.indocrm.model.Telecaller;
 import com.indocrm.indocrm.repository.LeadRepository;
@@ -97,6 +105,7 @@ public class TelecallerLeadController {
         applyLightProjection(q);
         List<LeadResponse> result = new ArrayList<>();
         for (Lead l : mongoTemplate.find(q, Lead.class)) result.add(toResponse(l));
+        attachCallStats(result);
         return ResponseEntity.ok(result);
     }
 
@@ -113,14 +122,28 @@ public class TelecallerLeadController {
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String category,
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String districts,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
 
-        List<String> districts = accessService.assignedDistricts();
-        if (districts.isEmpty()) return ResponseEntity.ok(Page.empty(pageable));
+        List<String> assigned = accessService.assignedDistricts();
+        if (assigned.isEmpty()) return ResponseEntity.ok(Page.empty(pageable));
+
+        // The telecaller may pick a subset of the districts assigned to them
+        // (?districts=Chennai,Madurai). Anything NOT assigned is silently dropped,
+        // so a telecaller can never read leads of a district they don't own.
+        List<String> selected = assigned;
+        if (notBlank(districts)) {
+            Set<String> wanted = new LinkedHashSet<>();
+            for (String part : districts.split(",")) if (!part.isBlank()) wanted.add(part.trim().toLowerCase());
+            selected = assigned.stream()
+                    .filter(a -> wanted.contains(a.trim().toLowerCase()))
+                    .collect(Collectors.toList());
+            if (selected.isEmpty()) return ResponseEntity.ok(Page.empty(pageable));
+        }
 
         // 1) district filter (case-insensitive, still index friendly because it is anchored)
         List<Object> districtMatchers = new ArrayList<>();
-        for (String d : districts) districtMatchers.add(exactIgnoreCase(d));
+        for (String d : selected) districtMatchers.add(exactIgnoreCase(d));
 
         List<Criteria> and = new ArrayList<>();
         and.add(Criteria.where("district").in(districtMatchers));
@@ -156,8 +179,43 @@ public class TelecallerLeadController {
 
         List<LeadResponse> content = new ArrayList<>();
         for (Lead l : mongoTemplate.find(dataQuery, Lead.class)) content.add(toResponse(l));
+        attachCallStats(content);
 
         return ResponseEntity.ok(new PageImpl<>(content, pageable, total));
+    }
+
+    /**
+     * One grouped query on the `calls` collection for the leads of the current page:
+     * how many times each lead was called (by anyone) and when it was last called.
+     * `calls.leadId` stores the business lead id (e.g. LD-1001) = LeadResponse.leadId.
+     * Add an index once:  db.calls.createIndex({ leadId: 1, startedAt: -1 })
+     */
+    private void attachCallStats(List<LeadResponse> leads) {
+        if (leads == null || leads.isEmpty()) return;
+        List<String> ids = leads.stream().map(LeadResponse::getLeadId)
+                .filter(x -> x != null && !x.isBlank()).distinct().collect(Collectors.toList());
+        if (ids.isEmpty()) return;
+
+        Aggregation agg = Aggregation.newAggregation(
+                Aggregation.match(Criteria.where("leadId").in(ids)),
+                Aggregation.sort(Sort.by(Sort.Direction.DESC, "startedAt")),
+                Aggregation.group("leadId")
+                        .count().as("callCount")
+                        .first("startedAt").as("lastCalledAt")
+                        .first("agentName").as("lastCalledBy"));
+        AggregationResults<Document> res = mongoTemplate.aggregate(agg, Call.class, Document.class);
+
+        Map<String, Document> byLead = new HashMap<>();
+        for (Document d : res.getMappedResults()) byLead.put(d.getString("_id"), d);
+
+        for (LeadResponse r : leads) {
+            Document d = byLead.get(r.getLeadId());
+            if (d == null) { r.setCallCount(0); continue; }
+            Number n = d.get("callCount", Number.class);
+            r.setCallCount(n == null ? 0 : n.intValue());
+            r.setLastCalledAt(d.get("lastCalledAt", Date.class));
+            r.setLastCalledBy(d.getString("lastCalledBy"));
+        }
     }
 
     // ------------------------------------------------------------------ helpers
